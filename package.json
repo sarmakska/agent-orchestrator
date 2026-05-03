@@ -1,0 +1,19 @@
+{
+  "name": "agent-orchestrator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-agent workflows with deterministic replay, durable state, and tool budgets.",
+  "license": "MIT",
+  "author": "Sarma Linux <https://sarmalinux.com>",
+  "homepage": "https://github.com/sarmakska/agent-orchestrator",
+  "repository": { "type": "git", "url": "git+https://github.com/sarmakska/agent-orchestrator.git" },
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "migrate": "pnpm --filter @sarmalinux/agent-orchestrator-api drizzle:push"
+  },
+  "engines": { "node": ">=22" },
+  "packageManager": "pnpm@10"
+}
