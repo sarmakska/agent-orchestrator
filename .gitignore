@@ -6,15 +6,20 @@ dist/
 build/
 .next/
 .turbo/
+.vercel/
 *.tsbuildinfo
 next-env.d.ts
+
+# Test output
+coverage/
+.pytest_cache/
 
 # Environment
 .env
 .env.local
 .env*.local
 
-# Drizzle
+# Drizzle generated migrations
 drizzle/
 
 # Logs
