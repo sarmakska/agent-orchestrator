@@ -12,8 +12,9 @@
     "dev": "pnpm --parallel -r dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
+    "typecheck": "pnpm -r exec tsc --noEmit",
     "migrate": "pnpm --filter @sarmalinux/agent-orchestrator-api drizzle:push"
   },
   "engines": { "node": ">=22" },
-  "packageManager": "pnpm@10"
+  "packageManager": "pnpm@10.33.0"
 }
