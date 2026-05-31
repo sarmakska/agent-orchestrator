@@ -1,9 +1,30 @@
-node_modules
-.next
-dist
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment
 .env
 .env.local
+.env*.local
+
+# Drizzle
+drizzle/
+
+# Logs
 *.log
+
+# Python
+__pycache__/
+
+# Rust / native
+target/
+
+# OS
 .DS_Store
-.turbo
-drizzle

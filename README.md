@@ -1,25 +1,13 @@
 # agent-orchestrator
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node](https://img.shields.io/badge/Node-22-339933?logo=node.js&logoColor=white)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white)](https://typescriptlang.org)
-[![Postgres](https://img.shields.io/badge/Postgres-17-336791?logo=postgresql&logoColor=white)](https://postgresql.org)
-[![Drizzle](https://img.shields.io/badge/Drizzle-ORM-C5F74F)](https://orm.drizzle.team)
-[![Open Source](https://img.shields.io/badge/Open_Source-%E2%9D%A4-red)](https://github.com/sarmakska/agent-orchestrator)
-
-## Star History
-
-<a href="https://www.star-history.com/#sarmakska/agent-orchestrator&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=sarmakska/agent-orchestrator&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=sarmakska/agent-orchestrator&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=sarmakska/agent-orchestrator&type=Date" />
- </picture>
-</a>
+[![License: MIT](https://img.shields.io/github/license/sarmakska/agent-orchestrator)](https://opensource.org/licenses/MIT)
+[![Top language](https://img.shields.io/github/languages/top/sarmakska/agent-orchestrator)](https://github.com/sarmakska/agent-orchestrator)
+[![Last commit](https://img.shields.io/github/last-commit/sarmakska/agent-orchestrator)](https://github.com/sarmakska/agent-orchestrator/commits/main)
+[![CI](https://img.shields.io/github/actions/workflow/status/sarmakska/agent-orchestrator/ci.yml?branch=main&label=CI)](https://github.com/sarmakska/agent-orchestrator/actions/workflows/ci.yml)
 
 **Multi-agent workflows with deterministic replay, durable state, and tool budgets.**
 
-Built by [Sarma Linux](https://sarmalinux.com).
+Built by [Sarma Linux](https://sarmalinux.com). Full documentation lives in the [project wiki](https://github.com/sarmakska/agent-orchestrator/wiki).
 
 ---
 
@@ -59,6 +47,23 @@ Honest answer: every existing framework I tried in production left me debugging 
 4. **Visible execution.** Every step recorded, queryable, replayable from any point.
 
 This orchestrator has all four. Most don't.
+
+## What is in the box
+
+- **Graph DSL** (`apps/api/src/graph`). Typed nodes and edges, conditional transitions, and per-graph budgets defined in plain TypeScript.
+- **Durable executor** backed by Postgres and Drizzle ORM. Every step is checkpointed, so a crashed run resumes from where it stopped.
+- **Deterministic replay** (`apps/api/src/graph/replay.ts`). Reconstruct any run exactly from its recorded trace.
+- **Budget enforcement** (`apps/api/src/budgets`). Token, tool-call, and wall-clock limits that actually halt execution rather than logging a warning.
+- **Tool registry** (`apps/api/src/tools/registry.ts`). Register Zod-validated tools and reference them by name from any node.
+- **Fastify API** that drives runs and exposes run state.
+- **Inspector UI** (`apps/inspector`). A Next.js app to walk runs step by step and view the live graph.
+- **Redis BullMQ** queue for distributing node execution across workers.
+
+## When to use this / when not to
+
+Use this when you are running multi-step agent pipelines in production and you need them to survive process crashes, when you need an audit trail of exactly what each agent did, when you want hard budgets that stop a runaway loop, or when you need to reproduce a past run deterministically for debugging.
+
+Do not reach for this if you are prototyping a single prompt or a one-shot chat completion. The durable state, queue, and Postgres dependency are overhead you do not need for a demo. It is also not a model provider or a hosted service. You bring your own LLM and run the stack yourself.
 
 ## Quick start
 
@@ -153,6 +158,16 @@ Part of a portfolio of twelve production-shaped open-source repositories built a
 | [webhook-to-email](https://github.com/sarmakska/webhook-to-email) | Webhook receiver that forwards events to email via Resend |
 | [k8s-ops-toolkit](https://github.com/sarmakska/k8s-ops-toolkit) | Helm chart for shipping Next.js to Kubernetes with full observability stack |
 | [terraform-stack](https://github.com/sarmakska/terraform-stack) | Vercel + Supabase + Cloudflare + DigitalOcean modules in one Terraform repo |
-| [staff-portal](https://github.com/sarmakska/staff-portal) | Open-source HR / ops portal — leave, attendance, expenses, kiosk mode |
+| [staff-portal](https://github.com/sarmakska/staff-portal) | Open-source HR / ops portal for leave, attendance, expenses, kiosk mode |
 
 Engineering essays at [sarmalinux.com/blog](https://sarmalinux.com/blog) &middot; All projects at [sarmalinux.com/open-source](https://sarmalinux.com/open-source)
+
+## Star History
+
+<a href="https://www.star-history.com/#sarmakska/agent-orchestrator&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=sarmakska/agent-orchestrator&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=sarmakska/agent-orchestrator&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=sarmakska/agent-orchestrator&type=Date" />
+ </picture>
+</a>
