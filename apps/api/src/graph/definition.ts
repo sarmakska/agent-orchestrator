@@ -25,9 +25,22 @@ export interface EdgeDef {
 }
 
 export interface BudgetDef {
+  /** Total LLM tokens across the whole run. */
   tokens?: number
+  /** Total tool-call invocations across the whole run. */
   tools?: number
+  /** Total wall-clock seconds before the run is aborted. */
   wallClockSec?: number
+  /** Optional per-tool call caps, keyed by tool name. Enforced alongside the global tool cap. */
+  perTool?: Record<string, number>
+}
+
+/** Serialisable shape of a graph, used by the inspector to draw the topology. */
+export interface GraphShape {
+  name: string
+  nodes: NodeDef[]
+  edges: { from: string; to: string; conditional: boolean }[]
+  budgets: BudgetDef
 }
 
 export class Graph {
@@ -53,6 +66,20 @@ export class Graph {
   budget(b: BudgetDef): this {
     this.budgets = { ...this.budgets, ...b }
     return this
+  }
+
+  /** Entry nodes are those no edge points to. */
+  entryNodes(): NodeDef[] {
+    return [...this.nodes.values()].filter((n) => !this.edges.some((e) => e.to === n.name))
+  }
+
+  toShape(): GraphShape {
+    return {
+      name: this.name,
+      nodes: [...this.nodes.values()],
+      edges: this.edges.map((e) => ({ from: e.from, to: e.to, conditional: Boolean(e.when) })),
+      budgets: this.budgets,
+    }
   }
 }
 
