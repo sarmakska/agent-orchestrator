@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, jsonb, integer, timestamp, boolean } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, jsonb, integer, timestamp } from 'drizzle-orm/pg-core'
 
 export const runs = pgTable('runs', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -14,6 +14,8 @@ export const runs = pgTable('runs', {
   budgetWallSec: integer('budget_wall_sec'),
   tokensUsed: integer('tokens_used').notNull().default(0),
   toolsUsed: integer('tools_used').notNull().default(0),
+  replayOf: uuid('replay_of'),
+  replayFromStep: integer('replay_from_step'),
 })
 
 export const traces = pgTable('traces', {

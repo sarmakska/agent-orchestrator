@@ -1,48 +1,53 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
-import { eq } from 'drizzle-orm'
-import { runs, traces, checkpoints } from './schema.js'
+import { MemoryStore } from './memoryStore.js'
+import { PostgresStore } from './postgresStore.js'
+import type { StateStore } from './store.js'
 
-const sql = postgres(process.env.DATABASE_URL || 'postgresql://orchestrator:devpassword@localhost:5432/orchestrator')
-export const db = drizzle(sql, { schema: { runs, traces, checkpoints } })
+/**
+ * Select the state store from the environment. When DATABASE_URL is set we use
+ * the durable Postgres store; otherwise we fall back to the in-memory store so
+ * the executor, the API, and the test suite all run with no external services.
+ */
+function createStore(): StateStore {
+  const url = process.env.DATABASE_URL
+  if (url) return new PostgresStore(url)
+  return new MemoryStore()
+}
+
+let store: StateStore = createStore()
+
+/** Override the store. Used by tests to inject a fresh in-memory store. */
+export function setStore(next: StateStore): void {
+  store = next
+}
 
 export const repository = {
-  async createRun(opts: { graph: string; input: Record<string, unknown> }) {
-    const [row] = await db.insert(runs).values({ graph: opts.graph, input: opts.input }).returning()
-    return row
-  },
+  store: () => store,
 
-  async getRun(id: string) {
-    const [row] = await db.select().from(runs).where(eq(runs.id, id))
-    return row
-  },
+  createRun: (opts: Parameters<StateStore['createRun']>[0]) => store.createRun(opts),
+  getRun: (id: string) => store.getRun(id),
+  listRuns: (limit?: number) => store.listRuns(limit),
+  setStatus: (id: string, status: string, fields?: Parameters<StateStore['setStatus']>[2]) =>
+    store.setStatus(id, status, fields),
+  appendTrace: (opts: Parameters<StateStore['appendTrace']>[0]) => store.appendTrace(opts),
+  getTrace: (runId: string) => store.getTrace(runId),
+  checkpoint: (runId: string, step: number, state: Record<string, unknown>) =>
+    store.checkpoint(runId, step, state),
+  getCheckpoint: (runId: string, step: number) => store.getCheckpoint(runId, step),
+  latestCheckpoint: (runId: string, atOrBefore: number) => store.latestCheckpoint(runId, atOrBefore),
 
-  async setStatus(id: string, status: string, fields: Partial<typeof runs.$inferInsert> = {}) {
-    return db.update(runs).set({ status, ...fields }).where(eq(runs.id, id))
-  },
-
-  async appendTrace(opts: { runId: string; step: number; node: string; kind: string; payload?: unknown; durationMs?: number }) {
-    return db.insert(traces).values(opts as any).returning()
-  },
-
-  async getTrace(runId: string) {
-    return db.select().from(traces).where(eq(traces.runId, runId))
-  },
-
-  async checkpoint(runId: string, step: number, state: Record<string, unknown>) {
-    return db.insert(checkpoints).values({ runId, step, state })
-  },
-
+  /**
+   * Create a replay run. The new run carries the original graph and input plus
+   * a pointer back to the original run and the step to resume from. The
+   * executor reads the checkpoint at that step and continues the walk.
+   */
   async replayRun(originalId: string, fromStep?: number) {
-    const original = await this.getRun(originalId)
+    const original = await store.getRun(originalId)
     if (!original) throw new Error('Run not found')
-    const [replay] = await db
-      .insert(runs)
-      .values({
-        graph: original.graph,
-        input: { ...original.input as Record<string, unknown>, _replayOf: originalId, _fromStep: fromStep ?? 0 },
-      })
-      .returning()
-    return replay
+    return store.createRun({
+      graph: original.graph,
+      input: original.input,
+      replayOf: originalId,
+      replayFromStep: fromStep ?? 0,
+    })
   },
 }
