@@ -5,7 +5,9 @@
 [![Last commit](https://img.shields.io/github/last-commit/sarmakska/agent-orchestrator)](https://github.com/sarmakska/agent-orchestrator/commits/main)
 [![CI](https://img.shields.io/github/actions/workflow/status/sarmakska/agent-orchestrator/ci.yml?branch=main&label=CI)](https://github.com/sarmakska/agent-orchestrator/actions/workflows/ci.yml)
 
-**Multi-agent workflows with deterministic replay, durable state, and tool budgets.**
+**Multi-agent workflows that survive 2am: durable state, deterministic replay, hard budgets, and full tracing.**
+
+Workflows are typed graphs, state is durable in Postgres, and every step writes a trace event you can replay deterministically. Agents have explicit token, tool-call, and wall-clock budgets that actually halt execution, and every run, node, LLM call, and tool call is wrapped in an OpenTelemetry span. A Next.js inspector draws the agent graph and lets you walk any run step by step.
 
 Built by [Sarma Linux](https://sarmalinux.com). Full documentation lives in the [project wiki](https://github.com/sarmakska/agent-orchestrator/wiki).
 
@@ -15,49 +17,46 @@ Built by [Sarma Linux](https://sarmalinux.com). Full documentation lives in the 
 
 Most agent frameworks are demos with delusions of grandeur. They fall over the moment a tool times out or a model hallucinates a parameter. This orchestrator is built around the assumption that everything will fail, repeatedly, and that you need to debug what your agents did six hours after the fact.
 
-Workflows are typed graphs. State is durable in Postgres. Every step writes a trace event that can be replayed deterministically. Agents have explicit tool, token, and wall-clock budgets, all enforced. Supports supervisor, swarm, and pipeline patterns. Ships with a web inspector to walk runs step by step.
+The orchestrators that survive 2am have four properties, and this one has all four:
+
+1. **Durable state.** A run is checkpointed after every node, so a crash resumes from the last checkpoint.
+2. **Deterministic replay.** Reconstruct any run from a checkpointed step without re-executing earlier nodes.
+3. **Hard budgets.** Token, tool-call, and wall-clock limits that abort the run rather than logging a warning.
+4. **Visible execution.** Every step recorded and queryable, with OpenTelemetry spans for external tracing.
 
 ## Architecture
 
 ```mermaid
 graph LR
-  C[Client SDK] --> API[Fastify API]
-  API --> EX[Graph Executor]
-  EX --> R[Tool Registry]
-  R --> T1[builtin: web_search]
-  R --> T2[builtin: sql]
-  R --> T3[your tools]
-  EX --> LLM[LLM provider]
+  C[Client] --> API[Fastify API]
+  API --> Q[Redis BullMQ]
+  Q --> EX[Graph executor]
+  EX --> AG[Agent dispatch]
+  AG --> LLM[LLM adapter]
+  AG --> R[Tool registry]
+  R --> MCP[MCP tools]
   EX --> S[(Postgres state)]
-  EX --> Q[Redis BullMQ]
+  EX --> OT[OpenTelemetry]
   S --> I[Inspector UI]
-  Q --> EX
 
   classDef ext fill:#a78bfa,stroke:#a78bfa,color:#fff
-  class LLM ext
+  class LLM,OT ext
 ```
 
-## Why another orchestrator
-
-Honest answer: every existing framework I tried in production left me debugging strange failures at 2am. The orchestrators that survive 2am have these properties:
-
-1. **Durable state.** Process crashes, resumes from the last checkpoint.
-2. **Deterministic replay.** Given the trace, I can reproduce the run exactly.
-3. **Hard budgets.** Token, tool-call, and wall-clock limits that actually halt execution.
-4. **Visible execution.** Every step recorded, queryable, replayable from any point.
-
-This orchestrator has all four. Most don't.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the run lifecycle, the component breakdown, and the database schema.
 
 ## What is in the box
 
-- **Graph DSL** (`apps/api/src/graph`). Typed nodes and edges, conditional transitions, and per-graph budgets defined in plain TypeScript.
-- **Durable executor** backed by Postgres and Drizzle ORM. Every step is checkpointed, so a crashed run resumes from where it stopped.
-- **Deterministic replay** (`apps/api/src/graph/replay.ts`). Reconstruct any run exactly from its recorded trace.
-- **Budget enforcement** (`apps/api/src/budgets`). Token, tool-call, and wall-clock limits that actually halt execution rather than logging a warning.
-- **Tool registry** (`apps/api/src/tools/registry.ts`). Register Zod-validated tools and reference them by name from any node.
-- **Fastify API** that drives runs and exposes run state.
-- **Inspector UI** (`apps/inspector`). A Next.js app to walk runs step by step and view the live graph.
-- **Redis BullMQ** queue for distributing node execution across workers.
+- **Graph DSL** (`apps/api/src/graph/definition.ts`). Typed nodes and edges, conditional transitions, and per-graph budgets in plain TypeScript.
+- **Durable executor** (`apps/api/src/graph/executor.ts`) backed by Postgres and Drizzle ORM. Every node is checkpointed, so a crashed run resumes from where it stopped.
+- **Real agent dispatch** (`apps/api/src/graph/agents.ts`). Supervisor, swarm, and pipeline kinds that call the LLM adapter and the tool registry.
+- **Budget enforcement** (`apps/api/src/budgets`). Token, tool-call, wall-clock, and per-tool limits that abort the run through an `AbortSignal`.
+- **Deterministic replay**. Resume a run from a checkpointed step without re-running earlier nodes.
+- **BullMQ run queue** (`apps/api/src/queue`) with a configurable retry policy. Degrades to in-process execution when Redis is absent.
+- **OpenTelemetry tracing** (`apps/api/src/telemetry`). Spans for every run, node, LLM call, and tool call, exported over OTLP/HTTP.
+- **Tool registry and MCP** (`apps/api/src/tools`). Register Zod-validated tools, or wrap a Model Context Protocol server. Both share one tool budget.
+- **Fastify API** that drives runs and exposes run state and graph topology.
+- **Inspector UI** (`apps/inspector`). A Next.js app with a run list, a run detail view, and an agent-graph visualisation.
 
 ## When to use this / when not to
 
@@ -69,75 +68,78 @@ Do not reach for this if you are prototyping a single prompt or a one-shot chat 
 
 ```bash
 git clone https://github.com/sarmakska/agent-orchestrator.git
-cd agent-orchestrator
-pnpm install
+cd agent-orchestrator && pnpm install
 docker compose up -d postgres redis
-cp .env.example .env
-pnpm migrate
+cp .env.example .env && pnpm migrate
 pnpm dev
 ```
 
-Inspector at `http://localhost:3000`. API at `http://localhost:4000`.
+The inspector is at `http://localhost:3000`, the API at `http://localhost:4000`. Two example graphs (`research-swarm` and `triage`) are registered at start-up. Trigger one:
+
+```bash
+curl -X POST http://localhost:4000/runs \
+  -H "Content-Type: application/json" \
+  -d '{"graph":"triage","input":{"intent":"refund"}}'
+```
+
+Open the returned run id in the inspector to watch the graph light up step by step.
+
+> No Postgres, Redis, or LLM key? Leave `DATABASE_URL`, `REDIS_URL`, and `SARMALINK_API_KEY` unset. The API falls back to an in-memory store, runs in-process, and the LLM adapter returns deterministic offline output. This is the same path the test suite uses.
 
 ## Defining a graph
 
+Graphs are registered in `apps/api/src/graphs/index.ts`. The research swarm example (`apps/api/examples/research-swarm/graph.ts`) reads:
+
 ```ts
-import { graph } from '@sarmalinux/agent-orchestrator'
+import { graph } from '../../src/graph/definition.js'
 
 export const research = graph('research-swarm')
-  .node('plan',     { agent: 'supervisor', llm: 'sarmalink' })
-  .node('search',   { agent: 'pipeline',   tools: ['web_search'] })
-  .node('analyse',  { agent: 'swarm',      llm: 'sarmalink', concurrency: 3 })
-  .node('summarise',{ agent: 'pipeline',   llm: 'sarmalink' })
+  .node('plan',      { agent: 'supervisor', llm: 'sarmalink' })
+  .node('search',    { agent: 'pipeline',   tools: ['web_search'] })
+  .node('analyse',   { agent: 'swarm',      llm: 'sarmalink', concurrency: 3 })
+  .node('summarise', { agent: 'pipeline',   llm: 'sarmalink' })
   .edge('plan', 'search')
   .edge('search', 'analyse')
   .edge('analyse', 'summarise')
-  .budget({ tokens: 50000, tools: 100, wallClockSec: 300 })
+  .budget({ tokens: 50000, tools: 100, wallClockSec: 300, perTool: { web_search: 20 } })
 ```
 
-Run:
+## Authoring a tool
 
 ```ts
-const run = await research.run({ topic: 'mediasoup vs LiveKit in 2026' })
-console.log(run.id)  // inspect at http://localhost:3000/runs/<run.id>
-```
-
-## Tool authoring
-
-```ts
-import { tool } from '@sarmalinux/agent-orchestrator'
+import { tool } from '../../src/tools/registry.js'
 import { z } from 'zod'
 
 export const stripeRefund = tool('stripe_refund', {
   description: 'Refund a Stripe charge by ID',
   schema: z.object({ chargeId: z.string(), amountPence: z.number().int() }),
-  handler: async ({ chargeId, amountPence }) => {
-    // call Stripe...
-    return { refundId: 're_...' }
-  },
+  handler: async ({ chargeId, amountPence }) => ({ refundId: `re_${chargeId}`, amountPence }),
 })
 ```
 
-Drop into the registry, reference by name from any node.
+Reference it by name from any node's `tools` array. Tool calls are validated against the schema and charged against the run's tool budget before the handler runs. MCP tools register through `registerMcpTool` and share the same budget.
 
-## Roadmap
+## Replay
 
-- [x] Graph DSL with typed nodes and edges
-- [x] Postgres-backed durable state
-- [x] Deterministic replay
-- [x] Token / tool / wall-clock budgets
-- [x] Supervisor, swarm, pipeline patterns
-- [x] Inspector UI with live graph view
-- [ ] Per-tool rate limits
-- [ ] Cost dashboards
-- [ ] OpenTelemetry trace export
-- [ ] kubectl-style CLI
+```bash
+curl -X POST http://localhost:4000/runs/<run-id>/replay \
+  -H "Content-Type: application/json" \
+  -d '{"fromStep": 2}'
+```
+
+This creates a new run that rehydrates context from the checkpoint at step 2 and resumes the walk, skipping the nodes that already ran.
+
+## Documentation
+
+- [Architecture](https://github.com/sarmakska/agent-orchestrator/wiki/Architecture)
+- [Quick Start](https://github.com/sarmakska/agent-orchestrator/wiki/Quick-Start)
+- [Graph DSL](https://github.com/sarmakska/agent-orchestrator/wiki/Graph-DSL)
+- [Budgets and tracing](https://github.com/sarmakska/agent-orchestrator/wiki/Budgets-and-Tracing)
+- [Roadmap](ROADMAP.md) and [Changelog](CHANGELOG.md)
 
 ## License
 
-MIT.
-
-Built by [Sarma Linux](https://sarmalinux.com).
+MIT. Built by [Sarma Linux](https://sarmalinux.com).
 
 ---
 
