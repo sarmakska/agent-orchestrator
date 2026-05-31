@@ -1,6 +1,6 @@
 {
   "name": "agent-orchestrator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Multi-agent workflows with deterministic replay, durable state, and tool budgets.",
   "license": "MIT",
