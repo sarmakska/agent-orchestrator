@@ -8,7 +8,13 @@ import type { Graph } from './definition.js'
 
 const REGISTRY = new Map<string, Graph>()
 
+/**
+ * Register a graph after validating its structure. An invalid graph (dangling
+ * edge, cycle, unreachable node, missing entry node) is rejected here with a
+ * precise GraphValidationError rather than producing a silently wrong run.
+ */
 export function register(g: Graph): void {
+  g.validate()
   REGISTRY.set(g.name, g)
 }
 
