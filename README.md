@@ -47,7 +47,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the run lifecycle, the component brea
 
 ## What is in the box
 
-- **Graph DSL** (`apps/api/src/graph/definition.ts`). Typed nodes and edges, conditional transitions, and per-graph budgets in plain TypeScript.
+- **Graph DSL** (`apps/api/src/graph/definition.ts`). Typed nodes and edges, conditional transitions, and per-graph budgets in plain TypeScript. Every graph is structurally validated at registration, so a dangling edge, a cycle, an unreachable node, or a missing entry node is rejected with a precise error before a single run starts.
 - **Durable executor** (`apps/api/src/graph/executor.ts`) backed by Postgres and Drizzle ORM. Every node is checkpointed, so a crashed run resumes from where it stopped.
 - **Real agent dispatch** (`apps/api/src/graph/agents.ts`). Supervisor, swarm, and pipeline kinds that call the LLM adapter and the tool registry.
 - **Budget enforcement** (`apps/api/src/budgets`). Token, tool-call, wall-clock, and per-tool limits that abort the run through an `AbortSignal`.
@@ -103,6 +103,28 @@ export const research = graph('research-swarm')
   .edge('analyse', 'summarise')
   .budget({ tokens: 50000, tools: 100, wallClockSec: 300, perTool: { web_search: 20 } })
 ```
+
+Every graph is validated when you `register` it. The executor walks a graph assuming it is a finite DAG with at least one entry node, so I reject anything that breaks that assumption up front rather than letting it produce a silently wrong run:
+
+```ts
+import { GraphValidationError } from '../../src/graph/definition.js'
+
+const broken = graph('broken')
+  .node('a', { agent: 'pipeline' })
+  .node('b', { agent: 'pipeline' })
+  .edge('a', 'b')
+  .edge('b', 'a') // cycle, and now neither node is an entry
+
+try {
+  register(broken)
+} catch (e) {
+  if (e instanceof GraphValidationError) console.error(e.problems)
+  // [ 'graph has no entry node (every node has an incoming edge)',
+  //   'cycle detected: a -> b -> a' ]
+}
+```
+
+`graph.problems()` returns the same list without throwing, which is handy in a CI check or a custom loader. It reports dangling edges, duplicate edges, cycles (with the offending path), unreachable nodes, and missing entry nodes in a single pass.
 
 ## Authoring a tool
 

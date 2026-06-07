@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Graph structural validation. `Graph.problems()` and `Graph.validate()` catch
+  dangling edges, duplicate edges, cycles (with the offending path), unreachable
+  nodes, and a missing entry node in a single pass. `register` now validates and
+  throws `GraphValidationError` so an invalid graph is rejected up front rather
+  than producing a silently wrong or never-terminating run.
 - Real agent dispatch in the executor. The `supervisor`, `swarm`, and `pipeline`
   node kinds now call the LLM adapter and the tool registry rather than returning
   a placeholder. Swarm nodes fan out `concurrency` parallel LLM passes.
